@@ -18,18 +18,28 @@ intents.messages = True
 intents.message_content = True
 intents.guilds = True
 
-# --- CONFIGURAÇÕES GERAIS ---
+# --- CONFIGURAÇÃO CENTRAL (NOVO!) ---
 TOKEN = os.getenv('DISCORD_TOKEN')
-TARGET_CHANNEL_NAME = 'off-topic'
 
-# --- CACHE EM MEMÓRIA ---
+# Nome exato do canal de texto que existirá dentro de cada categoria
+TARGET_CHANNEL_NAME_IN_CATEGORY = "presença"
+
+# Mapeamento das divisões: NOME DA CATEGORIA -> NOME DA PLANILHA
+# ATENÇÃO: Os nomes das categorias e planilhas aqui devem ser EXATAMENTE como no Discord/Google.
+DIVISION_CONFIG = {
+    "SOUTH AMERICA 23": "Controle SA23 - Presença",
+    "SOUTH AMERICA 43": "Controle SA43 - Presença",
+    "SOUTH AMERICA 63": "Controle SA63 - Presença",
+    "SOUTH AMERICA 71": "Controle SA71 - Presença",
+}
+
+# --- CACHE E VARIÁVEIS GLOBAIS ---
 posted_today_cache = set()
+channel_to_sheet_map = {} # Mapeia ID do canal para nome da planilha
 
-# --- INICIALIZAÇÃO DO BOT ---
 bot = discord.Client(intents=intents)
-target_channel = None
 
-# --- TAREFA AGENDADA PARA LIMPAR O CACHE ---
+# --- TAREFA AGENDADA ---
 cache_reset_time = datetime.time(23, 59, tzinfo=ZoneInfo(validators.TIMEZONE_STR))
 @tasks.loop(time=cache_reset_time)
 async def clear_daily_cache():
@@ -38,83 +48,90 @@ async def clear_daily_cache():
 
 # --- FUNÇÃO CENTRAL DE PROCESSAMENTO ---
 async def process_presence_message(message: discord.Message):
-    global target_channel
-    if not target_channel or message.channel.id != target_channel.id or message.author.bot:
+    if message.channel.id not in channel_to_sheet_map:
         return
 
-    # 1. Valida a mensagem e o horário
+    target_sheet_name = channel_to_sheet_map[message.channel.id]
+
     is_valid_time, result = validators.validate_presence_message(message)
-    
     if not is_valid_time:
-        # Se a validação de anexo ou horário falhou, envia o motivo via DM
         try:
-            await message.author.send(f"Olá! Sua postagem no canal #{target_channel.name} não pôde ser registrada. Motivo: {result}")
-            logging.warning(f"DM enviada para {message.author.display_name} com o motivo: {result}")
+            await message.author.send(f"Olá! Sua postagem no canal #{message.channel.name} não pôde ser registrada. Motivo: {result}")
         except discord.Forbidden:
-            logging.error(f"Falha ao enviar DM para {message.author.display_name}. O usuário pode ter DMs desativadas.")
+            pass
         return
 
-    event_name = result # Se a validação passou, o resultado é o nome do evento
-
-    # 2. Valida se o usuário já postou para este evento (verificação de duplicata)
-    cache_key = (message.author.id, event_name)
+    event_name = result
+    # O cache agora inclui o ID do canal para diferenciar presenças em diferentes divisões
+    cache_key = (message.author.id, event_name, message.channel.id)
     if cache_key in posted_today_cache:
-        error_msg = f"Você já registrou presença para o evento '{event_name}' hoje."
+        error_msg = f"Você já registrou presença para o evento '{event_name}' na divisão do canal #{message.channel.name}."
         try:
-            await message.author.send(f"Olá! Sua postagem no canal #{target_channel.name} não pôde ser registrada. Motivo: {error_msg}")
-            logging.warning(f"DM de post duplicado enviada para {message.author.display_name}.")
+            await message.author.send(f"Olá! Sua postagem não pôde ser registrada. Motivo: {error_msg}")
         except discord.Forbidden:
-            logging.error(f"Falha ao enviar DM de post duplicado para {message.author.display_name}.")
+            pass
         return
 
-    # --- Se todas as validações passaram, registra e reage ---
-    logging.info(f"Mensagem válida de '{message.author.display_name}' para o evento '{event_name}'. Processando...")
+    logging.info(f"Mensagem válida de '{message.author.display_name}' para '{event_name}' no canal '{message.channel.name}'.")
     
-    message_time_in_timezone = message.created_at.astimezone(ZoneInfo(validators.TIMEZONE_STR))
-
     success = sheets_client.record_presence(
+        sheet_name=target_sheet_name,
         nickname=message.author.display_name,
         event_name=event_name,
-        post_time=message_time_in_timezone,
+        post_time=message.created_at.astimezone(ZoneInfo(validators.TIMEZONE_STR)),
         image_url=message.attachments[0].url
     )
     
     if success:
-        # Adiciona a reação de sucesso na mensagem original
         await message.add_reaction("✅")
-        # Adiciona ao cache
         posted_today_cache.add(cache_key)
-        logging.info(f"Usuário {message.author.display_name} adicionado ao cache para o evento '{event_name}'.")
 
-# --- EVENTOS DO BOT (on_ready, on_message, on_message_edit) ---
-# ... (o resto do seu arquivo main.py continua igual)
+# --- EVENTOS DO BOT ---
 @bot.event
 async def on_ready():
-    global target_channel
-    for guild in bot.guilds:
-        channel = discord.utils.get(guild.text_channels, name=TARGET_CHANNEL_NAME)
+    global channel_to_sheet_map
+    logging.info(f"Bot conectado como {bot.user.name}")
+
+    # Assumindo que o bot está em apenas um servidor
+    if not bot.guilds:
+        logging.critical("O bot não está em nenhum servidor!")
+        return
+        
+    guild = bot.guilds[0]
+    logging.info(f"Verificando canais no servidor: '{guild.name}'")
+
+    for category_name, sheet_name in DIVISION_CONFIG.items():
+        # Passo 1: Encontrar a categoria pelo nome
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            logging.error(f"AVISO: Categoria '{category_name}' não foi encontrada no servidor.")
+            continue
+
+        # Passo 2: Encontrar o canal 'Presença' DENTRO da categoria encontrada
+        channel = discord.utils.get(category.text_channels, name=TARGET_CHANNEL_NAME_IN_CATEGORY)
         if channel:
-            target_channel = channel
-            logging.info(f"Bot conectado e monitorando o canal '{TARGET_CHANNEL_NAME}' no servidor '{guild.name}'")
-            break
+            channel_to_sheet_map[channel.id] = sheet_name
+            logging.info(f"OK: Monitorando canal '{channel.name}' na categoria '{category.name}' -> Planilha '{sheet_name}'")
+        else:
+            logging.error(f"AVISO: Canal '{TARGET_CHANNEL_NAME_IN_CATEGORY}' não foi encontrado na categoria '{category_name}'.")
     
-    if not target_channel:
-        logging.error(f"Não foi possível encontrar o canal '{TARGET_CHANNEL_NAME}' em nenhum servidor.")
-
     clear_daily_cache.start()
-    logging.info('------')
+    logging.info('------ Iniciação completa, aguardando mensagens ------')
 
+# Os eventos de mensagem continuam os mesmos
 @bot.event
 async def on_message(message: discord.Message):
+    if message.author.bot: return
     await process_presence_message(message)
 
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
+    if after.author.bot: return
     await process_presence_message(after)
 
 # --- INICIAR O BOT ---
 if __name__ == "__main__":
     if not TOKEN:
-        logging.critical("TOKEN do Discord não encontrado! Verifique seu arquivo .env")
+        logging.critical("TOKEN do Discord não encontrado!")
     else:
         bot.run(TOKEN)
