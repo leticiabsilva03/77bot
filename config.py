@@ -40,7 +40,7 @@ PRACA_PICO_SLOTS = [
     {"name": "Pico", "days": ALL_DAYS, "slots": [
         (time(1, 55), time(2, 35)),
         (time(7, 55), time(8, 35)),
-        (time(13, 55), time(14, 35)),
+        (time(12, 55), time(13, 35)),
         (time(18, 55), time(19, 35)),
     ]},
     {"name": "Praça", "days": ALL_DAYS, "slots": [

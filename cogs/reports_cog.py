@@ -6,11 +6,12 @@ import gspread
 import pandas as pd
 from datetime import datetime, timedelta
 import logging
+import sheets_client 
 from config import CONFIG # Importa a configuração central
 
 # --- CONFIGURAÇÕES ---
 SERVICE_ACCOUNT_FILE = 'credentials/bot-integration-464319-78fb375d86ee.json'
-SPREADSHEET_NAME = 'CONTROLE PRESENÇA'
+SPREADSHEET_NAME = 'CONTROLE PRESENÇA SA'
 WORKSHEET_NAMES = [cat_config["worksheet_name"] for cat_config in CONFIG.values()]
 
 # --- FUNÇÃO AUXILIAR ---
@@ -25,10 +26,11 @@ def get_data_as_dataframe(worksheet_name: str) -> pd.DataFrame:
         
         if len(all_values) < 2:
             return pd.DataFrame()
-
+        
         headers = ['DIA', 'EVENTO', 'HORA', 'NICK']
+        # A planilha armazena os dados em B:E — portanto pegamos colunas 1..4 (índices 1 a 4)
         raw_data = all_values[1:]
-        data = [row[:4] for row in raw_data]
+        data = [row[1:5] for row in raw_data]  # pega B, C, D, E
         
         df = pd.DataFrame(data, columns=headers)
         
@@ -90,7 +92,7 @@ class ReportsCog(commands.Cog):
     @app_commands.describe(servidor="Escolha a divisão/servidor.", jogador="Comece a digitar o nick do jogador.")
     @app_commands.choices(servidor=[app_commands.Choice(name=name, value=name) for name in WORKSHEET_NAMES])
     @app_commands.autocomplete(jogador=player_autocomplete)
-    @app_commands.default_permissions(administrator=True) # <-- MUDANÇA APLICADA AQUI
+    @app_commands.default_permissions(administrator=True) 
     async def presenca(self, interaction: discord.Interaction, servidor: str, jogador: str):
         await interaction.response.defer(ephemeral=True)
         
