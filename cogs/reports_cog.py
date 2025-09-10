@@ -114,10 +114,11 @@ class ReportsCog(commands.Cog):
         weekly_player_df = player_df[player_df['DIA'] >= start_of_week]
         wb_semanal = weekly_player_df[weekly_player_df['EVENTO'].str.contains("WB", na=False)].shape[0]
         pico_praca_semanal = weekly_player_df[weekly_player_df['EVENTO'].str.contains("Pico|Praça", na=False)].shape[0]
+        torre_mensal = weekly_player_df[weekly_player_df['EVENTO'].str.contains("Torre", na=False)].shape[0]
 
         monthly_player_df = player_df[player_df['DIA'] >= start_of_month]
         wb_mensal = monthly_player_df[monthly_player_df['EVENTO'].str.contains("WB", na=False)].shape[0]
-        eventos_mensal = monthly_player_df[~monthly_player_df['EVENTO'].str.contains("WB|Pico|Praça", na=False)].shape[0]
+        eventos_mensal = monthly_player_df[~monthly_player_df['EVENTO'].str.contains("WB|Pico|Praça|Torre", na=False)].shape[0]
 
         meses = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
         nome_mes = meses[today.month]
@@ -127,7 +128,9 @@ class ReportsCog(commands.Cog):
         embed.add_field(name="Praça/Pico (Semanal)", value=f"`{pico_praca_semanal}/56`", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True)
         embed.add_field(name="WB (Mensal)", value=f"`{wb_mensal}` presenças", inline=True)
+        embed.add_field(name="Torre (Mensal)", value=f"`{torre_mensal}` presenças", inline=True)
         embed.add_field(name="Eventos (Mensal)", value=f"`{eventos_mensal}` presenças", inline=True)
+
         
         semana_str = f"{start_of_week.strftime('%d/%m')} a {end_of_week.strftime('%d/%m')}"
         embed.set_footer(text=f"Semana: {semana_str} | Mês: {nome_mes} de {today.year}")
@@ -153,7 +156,8 @@ class ReportsCog(commands.Cog):
 
         top_10_wb = weekly_df[weekly_df['EVENTO'].str.contains("WB", na=False)]['NICK'].value_counts().nlargest(10)
         top_10_pico_praca = weekly_df[weekly_df['EVENTO'].str.contains("Pico|Praça", na=False)]['NICK'].value_counts().nlargest(10)
-        top_10_eventos = weekly_df[~weekly_df['EVENTO'].str.contains("WB|Pico|Praça", na=False)]['NICK'].value_counts().nlargest(10)
+        top_10_eventos = weekly_df[~weekly_df['EVENTO'].str.contains("WB|Pico|Praça|Torre", na=False)]['NICK'].value_counts().nlargest(10)
+        top_10_torre = weekly_df[weekly_df['EVENTO'].str.contains("Torre", na=False)]['NICK'].value_counts().nlargest(10)
 
         semana_str = f"{start_of_week.strftime('%d/%m')} a {end_of_week.strftime('%d/%m')}"
         embed = discord.Embed(
@@ -165,10 +169,14 @@ class ReportsCog(commands.Cog):
         wb_text = "\n".join([f"{i}. **{name}** (`{count}`)" for i, (name, count) in enumerate(top_10_wb.items(), 1)]) or "Nenhum registro."
         pico_praca_text = "\n".join([f"{i}. **{name}** (`{count}`)" for i, (name, count) in enumerate(top_10_pico_praca.items(), 1)]) or "Nenhum registro."
         eventos_text = "\n".join([f"{i}. **{name}** (`{count}`)" for i, (name, count) in enumerate(top_10_eventos.items(), 1)]) or "Nenhum registro."
+        torre_text = "\n".join([f"{i}. **{name}** (`{count}`)" for i, (name, count) in enumerate(top_10_torre.items(), 1)]) or "Nenhum registro."
+
 
         embed.add_field(name="WB (Top 10)", value=wb_text, inline=True)
         embed.add_field(name="Praça/Pico (Top 10)", value=pico_praca_text, inline=True)
-        embed.add_field(name="Eventos (Top 10)", value=eventos_text, inline=True)
+        embed.add_field(name="WB (Top 10)", value=wb_text, inline=True)
+        embed.add_field(name="Torre (Top 10)", value=torre_text, inline=True)
+        embed.add_field(name="Eventos (Top 10)", value=eventos_text, inline=True) # Mudei a ordem para agrupar melhor
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 
